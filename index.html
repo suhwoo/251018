@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Astray - Little Planet</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-header">
+            <h1>Astray</h1>
+            <div class="game-info">
+                <div class="health">체력: <span id="health">100</span></div>
+                <div class="oxygen">산소: <span id="oxygen">100</span></div>
+                <div class="parts">부품: <span id="parts">0/10</span></div>
+            </div>
+        </div>
+        
+        <canvas id="gameCanvas" width="1200" height="800"></canvas>
+        
+        <div class="game-ui">
+            <div class="inventory">
+                <h3>인벤토리</h3>
+                <div id="inventory-items"></div>
+            </div>
+            
+            <div class="controls">
+                <h3>조작법</h3>
+                <p>WASD: 4방향 이동</p>
+                <p>E: 상호작용</p>
+                <p>I: 인벤토리 열기/닫기</p>
+            </div>
+            
+            <div class="messages">
+                <h3>메시지</h3>
+                <div id="message-log"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="game.js"></script>
+</body>
+</html>
