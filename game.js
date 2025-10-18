@@ -16,7 +16,9 @@ class Game {
             parts: 0,
             maxParts: 10,
             inventory: [],
-            messages: []
+            messages: [],
+            lastOxygenUpdate: Date.now(),
+            lastHealthUpdate: Date.now()
         };
         
         // 플레이어
@@ -39,12 +41,16 @@ class Game {
             escapeShip: null,
             caves: [],
             ruins: [],
-            stars: [] // 별들을 저장할 배열 추가
+            stars: [], // 별들을 저장할 배열 추가
+            images: {} // 이미지 저장소 추가
         };
         
         // 입력 처리
         this.keys = {};
         this.setupEventListeners();
+        
+        // 이미지 로딩
+        this.loadImages();
         
         // 게임 초기화
         this.initWorld();
@@ -70,6 +76,36 @@ class Game {
         
         document.addEventListener('keyup', (e) => {
             this.keys[e.key.toLowerCase()] = false;
+        });
+    }
+    
+    loadImages() {
+        // 이미지 로딩 함수
+        const imageUrls = {
+            'ruin': 'ruin.png',        // 폐허 이미지
+            'cave': 'cave.png',        // 동굴 이미지
+            'large_ruin': 'large_ruin.png' // 큰 폐허 이미지
+        };
+        
+        let loadedCount = 0;
+        const totalImages = Object.keys(imageUrls).length;
+        
+        Object.entries(imageUrls).forEach(([key, url]) => {
+            const img = new Image();
+            img.onload = () => {
+                this.world.images[key] = img;
+                loadedCount++;
+                console.log(`이미지 로딩 완료: ${key}`);
+                
+                if (loadedCount === totalImages) {
+                    console.log("모든 이미지 로딩 완료!");
+                }
+            };
+            img.onerror = () => {
+                console.log(`이미지 로딩 실패: ${url} - 기본 사각형 사용`);
+                loadedCount++;
+            };
+            img.src = url;
         });
     }
     
@@ -334,11 +370,30 @@ class Game {
     }
     
     updateGameState() {
-        // 산소 감소 (시간이 지날수록) - 더 빠르게 감소
-        this.gameState.oxygen -= 0.05;
-        if (this.gameState.oxygen < 0) {
-            this.gameState.oxygen = 0;
-            this.gameState.health -= 0.2;
+        const currentTime = Date.now();
+        
+        // 산소 감소: 0.5초마다 1씩 감소
+        if (currentTime - this.gameState.lastOxygenUpdate >= 500) {
+            this.gameState.oxygen -= 1;
+            this.gameState.lastOxygenUpdate = currentTime;
+            
+            // 산소가 0 이하로 떨어지면 0으로 고정
+            if (this.gameState.oxygen < 0) {
+                this.gameState.oxygen = 0;
+            }
+        }
+        
+        // 산소가 0일 때 체력 감소: 1초마다 1씩 감소
+        if (this.gameState.oxygen <= 0) {
+            if (currentTime - this.gameState.lastHealthUpdate >= 1000) {
+                this.gameState.health -= 1;
+                this.gameState.lastHealthUpdate = currentTime;
+                
+                // 체력이 0 이하로 떨어지면 0으로 고정
+                if (this.gameState.health < 0) {
+                    this.gameState.health = 0;
+                }
+            }
         }
         
         // 체력이 0이 되면 게임 오버
@@ -494,15 +549,53 @@ class Game {
         document.getElementById('oxygen').textContent = Math.max(0, Math.floor(this.gameState.oxygen));
         document.getElementById('parts').textContent = `${this.gameState.parts}/${this.gameState.maxParts}`;
         
-        // 인벤토리 업데이트
-        const inventoryDiv = document.getElementById('inventory-items');
-        inventoryDiv.innerHTML = '';
-        this.gameState.inventory.forEach(item => {
+        // 인벤토리 업데이트 - 부품과 단서 분리
+        this.updateInventorySections();
+    }
+    
+    updateInventorySections() {
+        // 부품 섹션 업데이트
+        const partsDiv = document.getElementById('parts-items');
+        partsDiv.innerHTML = '';
+        
+        // 단서 섹션 업데이트
+        const cluesDiv = document.getElementById('clues-items');
+        cluesDiv.innerHTML = '';
+        
+        this.gameState.inventory.forEach((item, index) => {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'inventory-item';
-            itemDiv.textContent = item.type === 'ship_part' ? '⚙️' : '📜';
-            itemDiv.title = item.name || item.text;
-            inventoryDiv.appendChild(itemDiv);
+            itemDiv.dataset.index = index;
+            
+            if (item.type === 'ship_part') {
+                itemDiv.textContent = '⚙️';
+                itemDiv.title = item.name;
+                
+                // 부품 호버 이벤트
+                itemDiv.addEventListener('mouseenter', () => {
+                    this.showItemTooltip(itemDiv, item);
+                });
+                
+                itemDiv.addEventListener('mouseleave', () => {
+                    this.hideItemTooltip();
+                });
+                
+                partsDiv.appendChild(itemDiv);
+            } else {
+                itemDiv.textContent = '📜';
+                itemDiv.title = item.text;
+                
+                // 단서 호버 이벤트
+                itemDiv.addEventListener('mouseenter', () => {
+                    this.showItemTooltip(itemDiv, item);
+                });
+                
+                itemDiv.addEventListener('mouseleave', () => {
+                    this.hideItemTooltip();
+                });
+                
+                cluesDiv.appendChild(itemDiv);
+            }
         });
     }
     
@@ -580,29 +673,38 @@ class Game {
     }
     
     drawPlatform(platform) {
-        // 구조물 타입에 따른 색상
-        let color = '#6a6a6a';
-        if (platform.type === 'ruin') color = '#8b4513';
-        if (platform.type === 'large_ruin') color = '#654321';
-        if (platform.type === 'cave_entrance') color = '#2a2a2a';
-        
-        this.ctx.fillStyle = color;
-        this.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
-        
-        // 테두리
-        this.ctx.strokeStyle = '#8a8a8a';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
-        
-        // 구조물 타입 표시
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '12px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText(
-            platform.type.replace('_', ' ').toUpperCase(),
-            platform.x + platform.width / 2,
-            platform.y + platform.height / 2 + 4
-        );
+        // 이미지가 있으면 이미지 사용, 없으면 기본 사각형 사용
+        if (this.world.images[platform.type]) {
+            this.ctx.drawImage(
+                this.world.images[platform.type],
+                platform.x, platform.y,
+                platform.width, platform.height
+            );
+        } else {
+            // 기본 사각형 (이미지가 없을 때)
+            let color = '#6a6a6a';
+            if (platform.type === 'ruin') color = '#8b4513';
+            if (platform.type === 'large_ruin') color = '#654321';
+            if (platform.type === 'cave_entrance') color = '#2a2a2a';
+            
+            this.ctx.fillStyle = color;
+            this.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+            
+            // 테두리
+            this.ctx.strokeStyle = '#8a8a8a';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+            
+            // 구조물 타입 표시
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '12px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(
+                platform.type.replace('_', ' ').toUpperCase(),
+                platform.x + platform.width / 2,
+                platform.y + platform.height / 2 + 4
+            );
+        }
     }
     
     drawItem(item) {
@@ -677,26 +779,41 @@ class Game {
     }
     
     drawPlayer() {
-        // 플레이어 몸체 (더 밝은 색으로)
-        this.ctx.fillStyle = '#00ff00';
+        // 플레이어 그림자
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        this.ctx.fillRect(this.player.x + 2, this.player.y + 2, this.player.width, this.player.height);
+        
+        // 플레이어 몸체 (우주복 스타일)
+        this.ctx.fillStyle = '#4a9eff';
         this.ctx.fillRect(this.player.x, this.player.y, this.player.width, this.player.height);
         
-        // 플레이어 머리
+        // 우주복 디테일
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.fillRect(this.player.x + 5, this.player.y, 10, 10);
+        this.ctx.fillRect(this.player.x + 2, this.player.y + 2, this.player.width - 4, 8);
         
-        // 방향 표시
-        this.ctx.fillStyle = '#ff0000';
+        // 플레이어 머리 (헬멧)
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(this.player.x + 4, this.player.y - 5, 12, 10);
+        
+        // 헬멧 유리
+        this.ctx.fillStyle = '#87ceeb';
+        this.ctx.fillRect(this.player.x + 6, this.player.y - 3, 8, 6);
+        
+        // 방향 표시 (손전등)
+        this.ctx.fillStyle = '#ffff00';
         if (this.player.facing === 1) {
-            this.ctx.fillRect(this.player.x + this.player.width - 5, this.player.y + 5, 5, 5);
+            this.ctx.fillRect(this.player.x + this.player.width, this.player.y + 8, 6, 4);
         } else {
-            this.ctx.fillRect(this.player.x, this.player.y + 5, 5, 5);
+            this.ctx.fillRect(this.player.x - 6, this.player.y + 8, 6, 4);
         }
         
         // 플레이어 테두리
         this.ctx.strokeStyle = '#ffffff';
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(this.player.x, this.player.y, this.player.width, this.player.height);
+        
+        // 헬멧 테두리
+        this.ctx.strokeRect(this.player.x + 4, this.player.y - 5, 12, 10);
     }
     
     drawMinimap() {
@@ -755,6 +872,44 @@ class Game {
         requestAnimationFrame(() => this.gameLoop());
     }
     
+    showItemTooltip(itemElement, item) {
+        // 기존 툴팁 제거
+        this.hideItemTooltip();
+        
+        // 툴팁 생성
+        const tooltip = document.createElement('div');
+        tooltip.id = 'item-tooltip';
+        tooltip.className = 'item-tooltip';
+        
+        if (item.type === 'ship_part') {
+            tooltip.innerHTML = `
+                <div class="tooltip-title">${item.name}</div>
+                <div class="tooltip-type">탈출선 부품</div>
+                <div class="tooltip-desc">탈출선 복구에 필요한 중요한 부품입니다.</div>
+            `;
+        } else {
+            tooltip.innerHTML = `
+                <div class="tooltip-title">단서</div>
+                <div class="tooltip-type">${item.type === 'alien_text' ? '외계 언어' : '지도 조각'}</div>
+                <div class="tooltip-desc">${item.text}</div>
+            `;
+        }
+        
+        document.body.appendChild(tooltip);
+        
+        // 툴팁 위치 설정
+        const rect = itemElement.getBoundingClientRect();
+        tooltip.style.left = rect.right + 10 + 'px';
+        tooltip.style.top = rect.top + 'px';
+    }
+    
+    hideItemTooltip() {
+        const tooltip = document.getElementById('item-tooltip');
+        if (tooltip) {
+            tooltip.remove();
+        }
+    }
+    
     drawDebugInfo() {
         // 디버깅 정보를 화면에 표시
         this.ctx.fillStyle = '#ffffff';
@@ -770,7 +925,19 @@ class Game {
         y += 20;
         this.ctx.fillText(`단서: ${this.world.clues.length}개`, 10, y);
         y += 20;
-        this.ctx.fillText(`산소: ${Math.floor(this.gameState.oxygen)}`, 10, y);
+        this.ctx.fillText(`산소: ${this.gameState.oxygen}`, 10, y);
+        y += 20;
+        this.ctx.fillText(`체력: ${this.gameState.health}`, 10, y);
+        y += 20;
+        
+        // 산소 상태에 따른 경고 메시지
+        if (this.gameState.oxygen <= 20) {
+            this.ctx.fillStyle = '#ff0000';
+            this.ctx.fillText('⚠️ 산소 부족!', 10, y);
+        } else if (this.gameState.oxygen <= 50) {
+            this.ctx.fillStyle = '#ffaa00';
+            this.ctx.fillText('⚠️ 산소 부족 경고', 10, y);
+        }
     }
 }
 
